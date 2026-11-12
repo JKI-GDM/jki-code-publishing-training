@@ -1,0 +1,57 @@
+# Save this file in the GitHub repository as:
+# .github/workflows/publish-from-gitea.yml
+#
+# Setup in GitHub: Settings > Pages > Source > GitHub Actions.
+# Then select Actions > Publish course from Gitea > Run workflow.
+# Repeat Run workflow after rendering and pushing the updated _site/ to Gitea.
+# The Gitea repository must be reachable publicly without authentication.
+
+name: Publish course from Gitea
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  fetch-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download the rendered course from Gitea
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          git clone --depth 1 --branch main \
+            https://gitea.julius-kuehn.de/FDM/jki-code-publishing-training.git \
+            gitea-source
+          if [ ! -s gitea-source/_site/index.html ]; then
+            echo "::error::Missing _site/index.html. Render the course and commit and push _site/ to the main branch on Gitea."
+            exit 1
+          fi
+          git -C gitea-source log -1 --format='Source commit on Gitea: %H' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the rendered site for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: gitea-source/_site
+
+  deploy:
+    needs: fetch-site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
